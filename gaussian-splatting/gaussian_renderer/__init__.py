@@ -19,12 +19,17 @@ from scene.gaussian_model import GaussianModel
 try:
     from diff_gaussian_rasterization import GaussianRasterizationSettings, GaussianRasterizer
 except ImportError:
-    raise ImportError(
-        "diff_gaussian_rasterization not found — "
-        "make sure you've installed the 3DGS acceleration extension (e.g. pip install 3dgs_accel)."
-    )
-
-
+    print("⚠️ Warning: GPU rasterizer extension not found. 3DGS will run without acceleration.")
+    class GaussianRasterizationSettings:
+        def __init__(self, *args, **kwargs):
+            raise RuntimeError(
+                "GaussianRasterizationSettings unavailable: no GPU extension installed."
+            )
+    class GaussianRasterizer:
+        def __init__(self, *args, **kwargs):
+            raise RuntimeError(
+                "GaussianRasterizer unavailable: no GPU extension installed."
+            )
 
 from utils.sh_utils import eval_sh
 

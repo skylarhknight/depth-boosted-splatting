@@ -81,8 +81,25 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
     background = torch.tensor(bg_color, dtype=torch.float32, device=device)
 
-    iter_start = torch.cuda.Event(enable_timing = True)
-    iter_end = torch.cuda.Event(enable_timing = True)
+    # iter_start = torch.cuda.Event(enable_timing = True)
+    # iter_end = torch.cuda.Event(enable_timing = True)
+    # use_cuda_timer = torch.cuda.is_available()
+    # if use_cuda_timer:
+    #     iter_start = torch.cuda.Event(enable_timing = True)
+    #     iter_end   = torch.cuda.Event(enable_timing = True)
+    # else:
+    #     import time
+    #     # we'll record start/stop with perf_counter()
+    #     iter_start = None
+    #     iter_end   = None
+    import time
+    use_cuda_timer = torch.cuda.is_available()
+    if use_cuda_timer:
+        iter_start = torch.cuda.Event(enable_timing=True)
+        iter_end   = torch.cuda.Event(enable_timing=True)
+    else:
+        iter_start = None
+        iter_end   = None
 
     use_sparse_adam = opt.optimizer_type == "sparse_adam" and SPARSE_ADAM_AVAILABLE 
     depth_l1_weight = get_expon_lr_func(opt.depth_l1_weight_init, opt.depth_l1_weight_final, max_steps=opt.iterations)
@@ -110,7 +127,14 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             except Exception as e:
                 network_gui.conn = None
 
-        iter_start.record()
+        # iter_start.record()
+        
+        # start timing
+        if use_cuda_timer:
+            iter_start.record()
+        else:
+            start_time = time.perf_counter()
+       
         gaussians.update_learning_rate(iteration)
 
         # Every 1000 its we increase the levels of SH up to a maximum degree
@@ -175,7 +199,12 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
         loss.backward()
 
-        iter_end.record()
+        # iter_end.record()
+        # end timing
+        if use_cuda_timer:
+            iter_end.record()
+        else:
+            end_time = time.perf_counter()
 
         with torch.no_grad():
             # Progress bar
@@ -189,7 +218,20 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 progress_bar.close()
 
             # Log and save
-            training_report(tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end), testing_iterations, scene, render, (pipe, background, 1., SPARSE_ADAM_AVAILABLE, None, dataset.train_test_exp), dataset.train_test_exp)
+            # training_report(tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end), testing_iterations, scene, render, (pipe, background, 1., SPARSE_ADAM_AVAILABLE, None, dataset.train_test_exp), dataset.train_test_exp)
+                        # compute elapsed in ms
+            if use_cuda_timer:
+                elapsed_ms = iter_start.elapsed_time(iter_end)
+            else:
+                elapsed_ms = (end_time - start_time) * 1000.0
+            training_report(
+                tb_writer, iteration, Ll1, loss, l1_loss,
+                elapsed_ms,
+                testing_iterations, scene, render,
+                (pipe, background, 1., SPARSE_ADAM_AVAILABLE, None, dataset.train_test_exp),
+                dataset.train_test_exp
+            )
+            
             if (iteration in saving_iterations):
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
                 scene.save(iteration)

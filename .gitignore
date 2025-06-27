@@ -1,0 +1,40 @@
+# Ignore cloned repos
+/gaussian-splatting/
+/Depth-Anything-V2/
+
+# Ignore raw data and outputs
+/frames/
+/*.mp4
+*.png
+*.jpg
+*.exr
+*.npy
+
+# Ignore model checkpoints
+*.pth
+*.pt
+
+# Ignore logs, caches, and results
+*.log
+*.ckpt
+*.tensorboard
+__pycache__/
+*.pyc
+
+# VSCode or other editor-specific stuff
+.vscode/
+.idea/
+
+# Python virtual environment (if used)
+.venv/
+env/
+venv/
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Git backup files
+*.swp
+*.swo
+*.bak

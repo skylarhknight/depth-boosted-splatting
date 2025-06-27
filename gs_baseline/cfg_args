@@ -1,0 +1,1 @@
+Namespace(sh_degree=3, source_path='/Users/skylar/Documents/GitHub/depth-boosted-splatting/dataset/dense', model_path='../gs_baseline', images='../dataset/dense/images', depths='', resolution=-1, white_background=False, train_test_exp=False, data_device='cuda', eval=False)

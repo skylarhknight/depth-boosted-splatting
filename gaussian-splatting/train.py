@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 #
 # Copyright (C) 2023, Inria
 # GRAPHDECO research group, https://team.inria.fr/graphdeco
@@ -11,6 +12,14 @@
 
 import os
 import torch
+
+device = torch.device(
+    "cuda" if torch.cuda.is_available() else
+    "mps"   if torch.backends.mps.is_available() else
+    "cpu"
+)
+
+
 from random import randint
 from utils.loss_utils import l1_loss, ssim
 from gaussian_renderer import render, network_gui
@@ -40,6 +49,21 @@ try:
 except:
     SPARSE_ADAM_AVAILABLE = False
 
+# --- Added for monocular depth prior support ---
+import OpenEXR, Imath
+import numpy as np
+
+def load_depth_exr(path, device):
+    exr = OpenEXR.InputFile(path)
+    dw = exr.header()['dataWindow']
+    W = dw.max.x - dw.min.x + 1
+    H = dw.max.y - dw.min.y + 1
+    pt = Imath.PixelType(Imath.PixelType.FLOAT)
+    raw = exr.channel('R', pt)
+    arr = np.frombuffer(raw, dtype=np.float32).reshape(H, W)
+    return torch.from_numpy(arr).to(device)
+# --------------------------------------------------
+
 def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from):
 
     if not SPARSE_ADAM_AVAILABLE and opt.optimizer_type == "sparse_adam":
@@ -55,10 +79,27 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         gaussians.restore(model_params, opt)
 
     bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
-    background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
+    background = torch.tensor(bg_color, dtype=torch.float32, device=device)
 
-    iter_start = torch.cuda.Event(enable_timing = True)
-    iter_end = torch.cuda.Event(enable_timing = True)
+    # iter_start = torch.cuda.Event(enable_timing = True)
+    # iter_end = torch.cuda.Event(enable_timing = True)
+    # use_cuda_timer = torch.cuda.is_available()
+    # if use_cuda_timer:
+    #     iter_start = torch.cuda.Event(enable_timing = True)
+    #     iter_end   = torch.cuda.Event(enable_timing = True)
+    # else:
+    #     import time
+    #     # we'll record start/stop with perf_counter()
+    #     iter_start = None
+    #     iter_end   = None
+    import time
+    use_cuda_timer = torch.cuda.is_available()
+    if use_cuda_timer:
+        iter_start = torch.cuda.Event(enable_timing=True)
+        iter_end   = torch.cuda.Event(enable_timing=True)
+    else:
+        iter_start = None
+        iter_end   = None
 
     use_sparse_adam = opt.optimizer_type == "sparse_adam" and SPARSE_ADAM_AVAILABLE 
     depth_l1_weight = get_expon_lr_func(opt.depth_l1_weight_init, opt.depth_l1_weight_final, max_steps=opt.iterations)
@@ -86,8 +127,14 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             except Exception as e:
                 network_gui.conn = None
 
-        iter_start.record()
-
+        # iter_start.record()
+        
+        # start timing
+        if use_cuda_timer:
+            iter_start.record()
+        else:
+            start_time = time.perf_counter()
+       
         gaussians.update_learning_rate(iteration)
 
         # Every 1000 its we increase the levels of SH up to a maximum degree
@@ -106,7 +153,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         if (iteration - 1) == debug_from:
             pipe.debug = True
 
-        bg = torch.rand((3), device="cuda") if opt.random_background else background
+        bg = torch.rand((3), device=device) if opt.random_background else background
 
         render_pkg = render(viewpoint_cam, gaussians, pipe, bg, use_trained_exp=dataset.train_test_exp, separate_sh=SPARSE_ADAM_AVAILABLE)
         image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
@@ -125,6 +172,17 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
         loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim_value)
 
+        # --- Monocular depth prior on Camera 0 only ---
+        # if vind == 0:
+        #     depth_pred = render_pkg["depth"]
+        #     depth_gt = load_depth_exr("frames/frame_001.exr", depth_pred.device)
+        #     loss = loss + 0.1 * torch.mean(torch.abs(depth_pred - depth_gt))
+        
+        if vind == 0 and args.mono_depth_weight > 0:
+            depth_pred = render_pkg["depth"]
+            depth_gt = load_depth_exr("frames/frame_001.exr", depth_pred.device)
+            loss = loss + args.mono_depth_weight * torch.mean(torch.abs(depth_pred - depth_gt))
+
         # Depth regularization
         Ll1depth_pure = 0.0
         if depth_l1_weight(iteration) > 0 and viewpoint_cam.depth_reliable:
@@ -141,7 +199,12 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
         loss.backward()
 
-        iter_end.record()
+        # iter_end.record()
+        # end timing
+        if use_cuda_timer:
+            iter_end.record()
+        else:
+            end_time = time.perf_counter()
 
         with torch.no_grad():
             # Progress bar
@@ -149,20 +212,32 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             ema_Ll1depth_for_log = 0.4 * Ll1depth + 0.6 * ema_Ll1depth_for_log
 
             if iteration % 10 == 0:
-                progress_bar.set_postfix({"Loss": f"{ema_loss_for_log:.{7}f}", "Depth Loss": f"{ema_Ll1depth_for_log:.{7}f}"})
+                progress_bar.set_postfix({"Loss": f"{ema_loss_for_log:.7f}", "Depth Loss": f"{ema_Ll1depth_for_log:.7f}"})
                 progress_bar.update(10)
             if iteration == opt.iterations:
                 progress_bar.close()
 
             # Log and save
-            training_report(tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end), testing_iterations, scene, render, (pipe, background, 1., SPARSE_ADAM_AVAILABLE, None, dataset.train_test_exp), dataset.train_test_exp)
+            # training_report(tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end), testing_iterations, scene, render, (pipe, background, 1., SPARSE_ADAM_AVAILABLE, None, dataset.train_test_exp), dataset.train_test_exp)
+                        # compute elapsed in ms
+            if use_cuda_timer:
+                elapsed_ms = iter_start.elapsed_time(iter_end)
+            else:
+                elapsed_ms = (end_time - start_time) * 1000.0
+            training_report(
+                tb_writer, iteration, Ll1, loss, l1_loss,
+                elapsed_ms,
+                testing_iterations, scene, render,
+                (pipe, background, 1., SPARSE_ADAM_AVAILABLE, None, dataset.train_test_exp),
+                dataset.train_test_exp
+            )
+            
             if (iteration in saving_iterations):
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
                 scene.save(iteration)
 
             # Densification
             if iteration < opt.densify_until_iter:
-                # Keep track of max radii in image-space for pruning
                 gaussians.max_radii2D[visibility_filter] = torch.max(gaussians.max_radii2D[visibility_filter], radii[visibility_filter])
                 gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
 
@@ -189,6 +264,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 print("\n[ITER {}] Saving Checkpoint".format(iteration))
                 torch.save((gaussians.capture(), iteration), scene.model_path + "/chkpnt" + str(iteration) + ".pth")
 
+
 def prepare_output_and_logger(args):    
     if not args.model_path:
         if os.getenv('OAR_JOB_ID'):
@@ -211,6 +287,7 @@ def prepare_output_and_logger(args):
         print("Tensorboard not available: not logging progress")
     return tb_writer
 
+
 def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_iterations, scene : Scene, renderFunc, renderArgs, train_test_exp):
     if tb_writer:
         tb_writer.add_scalar('train_loss_patches/l1_loss', Ll1.item(), iteration)
@@ -229,7 +306,7 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
                 psnr_test = 0.0
                 for idx, viewpoint in enumerate(config['cameras']):
                     image = torch.clamp(renderFunc(viewpoint, scene.gaussians, *renderArgs)["render"], 0.0, 1.0)
-                    gt_image = torch.clamp(viewpoint.original_image.to("cuda"), 0.0, 1.0)
+                    gt_image = torch.clamp(viewpoint.original_image.to(device), 0.0, 1.0)
                     if train_test_exp:
                         image = image[..., image.shape[-1] // 2:]
                         gt_image = gt_image[..., gt_image.shape[-1] // 2:]
@@ -251,9 +328,12 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
             tb_writer.add_scalar('total_points', scene.gaussians.get_xyz.shape[0], iteration)
         torch.cuda.empty_cache()
 
+
 if __name__ == "__main__":
     # Set up command line argument parser
     parser = ArgumentParser(description="Training script parameters")
+    parser.add_argument("--mono_depth_weight", type=float, default=0.0,
+                        help="L1 weight for single-frame depth prior (0 = off)")
     lp = ModelParams(parser)
     op = OptimizationParams(parser)
     pp = PipelineParams(parser)

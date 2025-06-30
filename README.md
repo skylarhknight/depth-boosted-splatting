@@ -5,4 +5,5 @@ The research prototype aims to demonstrate a measurable gain in PSNR and visual 
 
 ### Credits
 Depth Boosted Splatting [Original Repository](https://github.com/DepthAnything/Depth-Anything-V2
+Gaussian Splatting [Original Repository](https://github.com/graphdeco-inria/gaussian-splatting)
 )

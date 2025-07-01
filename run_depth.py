@@ -2,13 +2,21 @@
 # run_depth.py
 
 import os, shutil
+import sys
+from pathlib import Path
+import cv2 
+import numpy as np
+import torch
+import OpenEXR, Imath
+
 from huggingface_hub import hf_hub_download
+from depth_anything_v2.dpt import DepthAnythingV2
 
 def ensure_checkpoints():
     ckpts = [
-      ("depth-anything/Depth-Anything-V2-Small", "depth_anything_v2_vits.pth"),
-      ("depth-anything/Depth-Anything-V2-Base",  "depth_anything_v2_vitb.pth"),
-      ("depth-anything/Depth-Anything-V2-Large", "depth_anything_v2_vitl.pth"),
+      ("depth-anything/Depth-Anything-V2-Small", "depth_anything_v2_vits.pth"), # Small
+      ("depth-anything/Depth-Anything-V2-Base",  "depth_anything_v2_vitb.pth"), # Base
+      ("depth-anything/Depth-Anything-V2-Large", "depth_anything_v2_vitl.pth"), # Large
     ]
     os.makedirs("checkpoints", exist_ok=True)
     for repo_id, fname in ckpts:
@@ -18,6 +26,7 @@ def ensure_checkpoints():
             src = hf_hub_download(repo_id=repo_id, filename=fname)
             shutil.copy(src, dest)
 
+
 if __name__ == "__main__":
     # 0) Ensure all three checkpoints are present locally
     ensure_checkpoints()
@@ -25,17 +34,8 @@ if __name__ == "__main__":
     # Enable CPU fallback for unsupported MPS ops
     os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
 
-    import sys
-    from pathlib import Path
-    import cv2 
-    import numpy as np
-    import torch
-
     # 1) Add the Depth-Anything-V2 code to Python path
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "Depth-Anything-V2"))
-
-    # 2) Import the correct model class
-    from depth_anything_v2.dpt import DepthAnythingV2
 
     # 3) Select the best device: CUDA → MPS → CPU
     if torch.cuda.is_available():
@@ -83,7 +83,6 @@ if __name__ == "__main__":
     out_path   = out_dir / f"{depth_name}.exr"
 
     # 12) Save the depth map using PyOpenEXR
-    import OpenEXR, Imath
     h, w = depth_map.shape
     pt = Imath.PixelType(Imath.PixelType.FLOAT)
     hdr = OpenEXR.Header(w, h)

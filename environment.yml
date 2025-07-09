@@ -25,3 +25,5 @@ dependencies:
       - transformers
       - timm
       - xatlas                # Optional; skip if it fails
+      - OpenEXR
+      - Imath

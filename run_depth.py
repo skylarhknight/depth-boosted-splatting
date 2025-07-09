@@ -10,7 +10,18 @@ import torch
 import OpenEXR, Imath
 
 from huggingface_hub import hf_hub_download
+#from depth_anything_v2.dpt import DepthAnythingV2
+
+root = os.path.dirname(__file__)
+
+# Depth-Anything-V2 folder (so Python can find `depth_anything_v2`)
+sys.path.insert(0, os.path.join(root, "Depth-Anything-V2"))
+
+# Gaussian-splatting folder (so Python can find `gaussian_renderer` and `scene`)
+sys.path.insert(0, os.path.join(root, "gaussian-splatting"))
+
 from depth_anything_v2.dpt import DepthAnythingV2
+from gaussian_renderer import render, network_gui
 
 def ensure_checkpoints():
     ckpts = [

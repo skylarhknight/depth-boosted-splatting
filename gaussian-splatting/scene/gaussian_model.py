@@ -18,7 +18,7 @@ import json
 from utils.system_utils import mkdir_p
 from plyfile import PlyData, PlyElement
 from utils.sh_utils import RGB2SH
-from simple_knn._C import distCUDA2
+
 from utils.graphics_utils import BasicPointCloud
 from utils.general_utils import strip_symmetric, build_scaling_rotation
 
@@ -26,6 +26,19 @@ try:
     from diff_gaussian_rasterization import SparseGaussianAdam
 except:
     pass
+
+
+try:
+    from simple_knn._C import distCUDA2
+except ImportError:
+    import torch
+    def distCUDA2(X, Y):
+        """
+        X: (N,D) tensor, Y: (M,D) tensor
+        returns an (N,M) tensor of squared‐euclidean distances.
+        """
+        return ((X.unsqueeze(1) - Y.unsqueeze(0)) ** 2).sum(-1)
+
 
 class GaussianModel:
 

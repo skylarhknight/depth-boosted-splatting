@@ -40,3 +40,8 @@ Installable via `environment.yml` or `requirements.txt`:
 
 ### Optional (for 3D Gaussian Splatting)
 - `diff_gaussian_rasterization` (`3dgs_accel`) module for GPU-accelerated rendering
+
+
+
+### Notes
+- environment-full is the dependencies for my VM

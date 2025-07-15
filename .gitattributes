@@ -1,3 +1,4 @@
 *.pth filter=lfs diff=lfs merge=lfs -text
 dataset/database.db filter=lfs diff=lfs merge=lfs -text
 dataset/sparse/ignatius/0/images.bin filter=lfs diff=lfs merge=lfs -text
+*.bin filter=lfs diff=lfs merge=lfs -text

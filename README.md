@@ -9,6 +9,8 @@ Depth Boosted Splatting [Original Repository](https://github.com/DepthAnything/D
 
 Gaussian Splatting [Original Repository](https://github.com/graphdeco-inria/gaussian-splatting)
 
+Tanks and Temples [Open Source Image Dataset](https://www.tanksandtemples.org/download/) - used for training and evaluation
+
 ## System Requirements
 
 ### OS

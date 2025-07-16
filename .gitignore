@@ -10,3 +10,4 @@ output/
 *.tar.gz
 colmap/
 
+dataset/dense/**/depth_maps/*.bin

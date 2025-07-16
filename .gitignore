@@ -3,3 +3,10 @@ dataset/
 output/
 *.tar.gz
 *.bin
+# Ignore large datasets and outputs
+dataset/images/
+dataset/dense/
+output/
+*.tar.gz
+colmap/
+

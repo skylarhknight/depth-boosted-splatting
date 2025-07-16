@@ -11,3 +11,4 @@ output/
 colmap/
 
 dataset/dense/**/depth_maps/*.bin
+ignatius_depth_maps.tar

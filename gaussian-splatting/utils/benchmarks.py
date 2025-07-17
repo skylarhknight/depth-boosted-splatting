@@ -14,18 +14,23 @@ class BenchmarkLogger:
         du = shutil.disk_usage(path)
         return du.used
 
-    def log(self, scene_name, iteration, metrics: dict):
+    def log(self, scene_name, iteration, metrics: dict, extra_meta: dict = None):
         """
-        metrics: a flat dict of all numbers you care about.
+        metrics: core performance metrics
+        extra_meta: optional metadata (e.g. depth source, format, etc)
         """
+        full_metrics = {**{"iter": iteration}, **metrics}
+        if extra_meta:
+            full_metrics.update(extra_meta)
+
         # 1) TensorBoard
         if self.tb:
-            for k,v in metrics.items():
+            for k, v in full_metrics.items():
                 self.tb.add_scalar(f"{scene_name}/{k}", v, iteration)
 
         # 2) CSV
         csv_path = os.path.join(self.out_dir, f"{scene_name}.csv")
-        df = pd.DataFrame([{**{"iter": iteration}, **metrics}])
+        df = pd.DataFrame([full_metrics])
         header = not os.path.exists(csv_path)
         df.to_csv(csv_path, mode='a', header=header, index=False)
 
